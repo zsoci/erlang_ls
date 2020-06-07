@@ -83,8 +83,7 @@ handle_request({initialized, _Params}, State) ->
   els_db:install(NodeName, DbDir),
   case els_bsp_client:get_connection(RootUri) of
     {ok, Connection} ->
-      lager:info("BSP Connection found. connection=~p", [Connection]),
-      els_bsp_client:
+      lager:info("BSP Connection found. connection=~p", [Connection]);
     {error, not_found} ->
       lager:info("BSP Connection not found, skipping.")
   end,

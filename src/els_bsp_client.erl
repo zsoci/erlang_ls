@@ -11,6 +11,7 @@
 -export([ init/1
         , handle_call/3
         , handle_cast/2
+        , handle_info/2
         ]).
 
 %%==============================================================================
@@ -53,6 +54,7 @@
                , pending       = []
                , notifications = []
                , requests      = []
+               , port          :: port()
                }).
 
 %%==============================================================================
@@ -125,39 +127,40 @@ build_publish_diagnostics(Params) ->
 %%==============================================================================
 -spec init([]) -> {ok, state()}.
 init([]) ->
-  A = [ [], standard_io, fun handle_responses/1, els_jsonrpc:default_opts() ],
-  _Pid = proc_lib:spawn_link(els_stdio, loop, A),
-  {ok, #state{}}.
+  process_flag(trap_exit, true),
+  E = os:find_executable("rebar3"),
+  Port = open_port({spawn_executable, E}, [{args, ["bsp"]}]),
+  {ok, #state{port = Port}}.
 
 -spec handle_call(any(), any(), state()) -> {reply, any(), state()}.
-handle_call({build_initialized, Opts}, _From, State) ->
+handle_call({build_initialized, Opts}, _From, #state{port = Port} = State) ->
   Method = method_lookup(build_initialized),
   Params = notification_params(Opts),
   Content = els_protocol:notification(Method, Params),
-  send(Content),
+  send(Port, Content),
   {reply, ok, State};
-handle_call({exit}, _From, State) ->
+handle_call({exit}, _From, #state{port = Port} = State) ->
   RequestId = State#state.request_id,
   Method = <<"exit">>,
   Params = #{},
   Content = els_protocol:request(RequestId, Method, Params),
-  send(Content),
+  send(Port, Content),
   {reply, ok, State};
-handle_call({shutdown}, From, State) ->
+handle_call({shutdown}, From, #state{port = Port} = State) ->
   RequestId = State#state.request_id,
   Method = <<"shutdown">>,
   Params = #{},
   Content = els_protocol:request(RequestId, Method, Params),
-  send(Content),
+  send(Port, Content),
   {noreply, State#state{ request_id = RequestId + 1
                        , pending    = [{RequestId, From} | State#state.pending]
                        }};
 handle_call(Input = {build_initialize, _}, From, State) ->
-  #state{ request_id = RequestId } = State,
+  #state{ port = Port, request_id = RequestId } = State,
   Method = method_lookup(build_initialize),
   Params = request_params(Input),
   Content = els_protocol:request(RequestId, Method, Params),
-  send(Content),
+  send(Port, Content),
   {noreply, State#state{ request_id = RequestId + 1
                        , pending    = [{RequestId, From} | State#state.pending]
                        }}.
@@ -175,6 +178,11 @@ handle_cast({handle_responses, Responses}, State) ->
                        , requests = Requests
                        }};
 handle_cast(_Request, State) ->
+  {noreply, State}.
+
+-spec handle_info(any(), state()) -> {noreply, state()}.
+handle_info(Request, State) ->
+  lager:info("Request from port: ~p", [Request]),
   {noreply, State}.
 
 %%==============================================================================
@@ -241,7 +249,7 @@ notification_params({Uri, LanguageId, Version, Text}) ->
                   , text       => Text
                   },
   #{textDocument => TextDocument};
-notification_params({}) ->
+notification_params(_) ->
   #{}.
 
 -spec is_notification(map()) -> boolean().
@@ -256,13 +264,10 @@ is_response(#{method := _Method}) ->
 is_response(_) ->
   true.
 
--spec send(binary()) -> ok.
-send(Payload) ->
-  io:format(standard_io, Payload, []).
-
--spec handle_responses([map()]) -> ok.
-handle_responses(Responses) ->
-  gen_server:cast(?SERVER, {handle_responses, Responses}).
+-spec send(port(), binary()) -> ok.
+send(Port, Payload) ->
+  port_command(Port, Payload).
 
 -spec method_lookup(atom()) -> binary().
-method_lookup(build_initialize) -> <<"build/initialize">>.
+method_lookup(build_initialize) -> <<"build/initialize">>;
+method_lookup(build_initialized) -> <<"build/initialized">>.
