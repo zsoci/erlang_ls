@@ -58,11 +58,25 @@ handle_request({completion, Params}, State) ->
             , line     => Line + 1
             , column   => Character
             },
-  {find_completion(Prefix, TriggerKind, Opts), State}.
+  Completions0 = find_completion(Prefix, TriggerKind, Opts),
+  Completions = [populate_with_uri(C, Uri) || C <- Completions0],
+  {Completions, State};
+handle_request({resolve, CompletionItem}, State) ->
+  Entries = handle_resolve(CompletionItem)
+  #{type := Type, } = Data,
+  Entries = els_docs:function_docs(Type, M, F, A),
+  {CompletionItem#{documentation => els_markup_content:new(Entries)}, State}.
 
 %%==============================================================================
 %% Internal functions
 %%==============================================================================
+handle_resolve(#{kind := ?COMPLETION_ITEM_KIND_FUNCTION, }) ->
+  
+-spec populate_with_uri(map(), uri()) -> map().
+populate_with_uri(#{data := Data0} = CompletionItem, Uri) ->
+  CompletionItem#{data => maps:put(uri, Uri, Data0)};
+populate_with_uri(CompletionItem, Uri) ->
+  CompletionItem#{data => #{uri => Uri}}.
 
 -spec find_completion(binary(), integer(), options()) -> any().
 find_completion( Prefix
@@ -224,7 +238,6 @@ definitions(Document, POIKind, ExportFormat, ExportedOnly) ->
                  Exports = local_and_included_pois(Document, ExportKind),
                  [FA || #{id := FA} <- Exports]
              end,
-
   Items = resolve_definitions(POIs, FAs, ExportedOnly, ExportFormat),
   lists:usort(Items).
 
@@ -390,6 +403,7 @@ completion_item(#{kind := Kind, id := {F, A}, data := ArgsNames}, false)
    , kind             => completion_item_kind(Kind)
    , insertText       => snippet_function_call(F, ArgsNames)
    , insertTextFormat => ?INSERT_TEXT_FORMAT_SNIPPET
+   , data             => #{ }
    };
 completion_item(#{kind := Kind, id := {F, A}}, true)
   when Kind =:= function;
@@ -398,6 +412,7 @@ completion_item(#{kind := Kind, id := {F, A}}, true)
   #{ label            => els_utils:to_binary(Label)
    , kind             => completion_item_kind(Kind)
    , insertTextFormat => ?INSERT_TEXT_FORMAT_PLAIN_TEXT
+   , data             => #{ poi => POI }
    };
 completion_item(#{kind := Kind, id := Name}, _)
   when Kind =:= record;

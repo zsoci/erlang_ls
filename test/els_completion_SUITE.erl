@@ -31,6 +31,7 @@
         , variables/1
         , remote_fun/1
         , snippets/1
+        , resolve_application_local/1
         ]).
 
 %%==============================================================================
@@ -522,3 +523,22 @@ snippets(Config) ->
   CustomSnippets = filelib:wildcard("*", CustomSnippetsDir),
   Expected = lists:usort(Snippets ++ CustomSnippets),
   ?assertEqual(length(Expected), length(Completions)).
+
+-spec resolve_application_local(config()) -> ok.
+resolve_application_local(Config) ->
+  Uri = ?config(completion_resolve_uri, Config),
+  CompletionItem = #{ label => <<"local_call_1/0">>
+                    , kind => ?COMPLETION_ITEM_KIND_FUNCTION
+                    , insertTextFormat => ?INSERT_TEXT_FORMAT_PLAIN_TEXT
+                    , data => #{ uri => Uri
+                               , poi => #{ data=> []
+                                         , id => {local_call_1, 0}
+                                         , kind => function
+                                         , range => #{ from => {8, 1}
+                                                     , to => {8, 13}
+                                                     }
+                                         }
+                               }
+                      },
+  Result = els_client:completionitem_resolve(CompletionItem),
+  ?assertEqual(todo, Result).
