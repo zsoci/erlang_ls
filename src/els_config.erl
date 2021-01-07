@@ -113,6 +113,7 @@ do_initialize(RootUri, Capabilities, {ConfigPath, Config}) ->
   ok = set(macros         , Macros),
   ok = set(plt_path       , DialyzerPltPath),
   ok = set(code_reload    , CodeReload),
+  lager:info("Config=~p", [Config]),
   ok = set(runtime, maps:merge( els_config_runtime:default_config()
                               , Runtime)),
   ok = set('ct-run-test', maps:merge( els_config_ct_run_test:default_config()
